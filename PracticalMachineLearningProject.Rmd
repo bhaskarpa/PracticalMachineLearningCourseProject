@@ -1,0 +1,215 @@
+---
+title: "Practical Machine Learning - Prediction Of Weight Lifting Excersise Activity"
+author: "Bhaskar Parvathaneni"
+date: "May 15, 2015"
+output: pdf_document
+---
+
+# Executive Summary
+In this report we analyze the Humam Activity Recognition(HAR) data for weight lifting exercises. The goal is to predict how well an activity was performed by the person wearing the activity measuring device. Three prediction model algorithms were considered for prediction as outlined later in the model selection section. The best model selected for generating the prediction was *Random Forest* which had an accuracy of about *99.4%* and an out-of-sample error of about *0.60%*. A detailed comparison of results from the 3 models is presented in the results section.
+
+# Data Preperation & Pre-Processing
+The data loading and cleaning steps are described in the following sub-sections.
+
+## Data Overview
+The Weight Lifting Excercise(WLE) dataset was collected for a group of six participants aged 20-28 years wearing activity measuring devices. The activities measured were classified as follows
+
+* Class A - done exactly accoring to specification
+* Class B - throwing the elbows to the front
+* Class C - lifting the dumbell only halfway
+* Class D - lowering the dumbell only halfway
+* Class E - throwing the hips to the front
+
+## Data Loading
+The data was downloaded into the current working directory set in R for the user.
+```{r echo=TRUE}
+cache=TRUE
+#
+# Download storm data file if it does not exist.
+#
+wleTrainDatasetURL="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+wleTestDatasetURL="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if (!file.exists("pml-training.csv")) {
+    downloadFile(wleTrainDatasetURL, "pml-training.csv")
+}
+
+if (!file.exists("pml-testing.csv")) {
+    downloadFile(wleTestDatasetURL, "pml-training.csv")
+}
+
+rawTraining <- read.csv("pml-training.csv", na.strings=c("NA", ""))
+rawTesting <- read.csv("pml-testing.csv", na.strings=c("NA", ""))
+```
+
+## Data Summary
+The dimensions of the initial training and test dataset is as follows.
+```{r echo=TRUE}
+dim(rawTraining)
+dim(rawTesting)
+```
+
+## Cleaning Data
+In this step we first remove all variables with a high percentage of missing and *NA* values. We also remove variables that are not relevant to our analysis.
+
+* Remove all variables with missing and *NA* values using the following R-script.
+```{r echo=TRUE}
+dropColumnsWithMissingAndNAValues <- (colSums(is.na(rawTraining))==0)
+training <- rawTraining[,dropColumnsWithMissingAndNAValues]
+dim(training)
+```
+
+* Remove the first 7 variables as they are not relevant to the prediction outcome.
+```{r echo=TRUE}
+training <- training[,8:length(training)]
+dim(training)
+trainingPredictorCols <- colnames(training[,1:length(training)-1])
+testing <- rawTesting[,c(trainingPredictorCols, "problem_id")]
+dim(testing)
+set.seed(131719)
+```
+The above cleaning steps have reduced the number of predictor variables from *159* to *52*.
+
+## Data Pre-Processing To Remove Highly Corelated Variables
+In this step we analyze remaining predictor variables in the training dataset to determine the degree of co-relation. Based on this analysis we remove all variables with a high degree of correlation as they will contribute to higher variance and less accuracy. This step further reduces the predictor variables to *45*, the eleminated variables in this step are as follows.
+```{r echo=TRUE}
+suppressMessages(require(caret))
+corTraining <- cor(training[,-53])
+highlyCorelatedTrainingVarIndexes <- findCorrelation(corTraining, cutoff=.90)
+names(training[,highlyCorelatedTrainingVarIndexes])
+training <- training[,-highlyCorelatedTrainingVarIndexes]
+dim(training)
+```
+
+## Distribution Of Training Data
+The distribution of training data based on the class of weight lifting excercise is as follows.
+```{r dataDistPlot, fig.height=4, fig.width=4, echo=TRUE}
+ggplot(data.frame(training),aes(x=classe)) + geom_histogram(fill="slateblue") + xlab("Class Of Weight Lifting Excercise")
+```
+
+# Data Slicing
+The training dataset is pretty big and is sliced further into training and validation subsets. This slicing will help in using the validation set for training and cross-validating the prediction model.
+```{r echo=TRUE}
+inTrain2 <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training2 <- training[inTrain2,]
+validation2 <- training[-inTrain2,]
+dim(training2)
+dim(validation2)
+```
+
+# Prediction Model Selection
+In the model selection step we consider three different model selection algorithms. A model is generated for ecach of the three cases by training and cross-validating with the datasets. The prediction model generated in each case will be used to perform the confusion matrix analysis to determine the accuracy and out-of-sample error.
+
+* Regression Tree (rpart)
+* Random Forest (rf)
+* Gradient Boosting (gbm)
+
+## Regression Tree
+In this case the data is analyzed by doing a recursive classification that builds a binary decision tree to pick the features in the model.
+
+### Prediction Model Fit
+In this case the prediction model is generated using the *rpart* machine learning algorithm that is part of the *caret* package. The *rpart* processing will take a few minutes(2 to 6 mins).
+```{r echo=TRUE}
+suppressMessages(require(rpart))
+suppressMessages(require(rpart.plot))
+rpartModelFit <- train(classe~.,data=training2,preProcess=c("knnImpute","center","scale"),method="rpart",trControl=trainControl(method="cv",number=10,repeats=10,allowParallel=TRUE))
+rpartModelFit
+```
+
+### Regression Decision Tree Plot
+```{r regressionFancyPlot, fig.height=6, fig.width=8,echo=TRUE}
+suppressMessages(require(rattle))
+fancyRpartPlot(rpartModelFit$finalModel)
+```
+
+### Prediction & Accuracy Using Regression Tree
+The *Regression Tree* model generated in the previous step is used to predict the outcome *classe* on the validation set. The accuracy of the prediction based on the confusion matrix analysis is as follows.
+```{r echo=TRUE}
+rpartPredict <- predict(rpartModelFit,newdata=validation2)
+confusionMatrix(rpartPredict,validation2$classe)
+```
+
+## Random Forest
+In this method an ensemble learning method is used for classification and regression tasks. This is accomplished by construction multiple decision trees at training time and outputing the mean prediction of individual trees.
+
+### Prediction Model Fit
+The prediction model is generated using the *randomForest* machine learning algorithm in the *randomForest* package. This processing can take upto a few mins (Usually between 5 & 10 mins).
+```{r echo=FALSE}
+suppressMessages(require(caret))
+suppressMessages(require(randomForest))
+rfModelFit <- randomForest(classe~.,data=training2,nTree=200,importance=TRUE,proximity=TRUE)
+rfModelFit
+```
+
+### Plot Of Variable Importance In Random Forest
+```{r rfVarImpPlot, fig.height=8, fig.width=8, echo=TRUE}
+varImpPlot(rfModelFit)
+```
+
+### Prediction & Accuracy Using Random Forest
+The *Random Forest* model fit generated in the previous step is used to predict the outcome on the validation data. The accuracy results based on confusion matrix analysis is as follows.
+```{r echo=TRUE}
+rfPredict <- predict(rfModelFit, newdata=validation2)
+confusionMatrix(rfPredict,validation2$classe)
+```
+
+## Gradient Boosting
+This is a machine learning technique that produces a prediction model in the form of an ensemble of weak prediction models, typically decision trees.
+
+### Prediction Model Fit
+The prediction model is generated using the *gbm* machine learing algorithm in the *caret* package.
+```{r echo=TRUE,include=FALSE}
+sink('/dev/null')
+gbmModelFit <- train(classe~.,data=training2,preProcess=c("knnImpute","center","scale"),method="gbm",trControl=trainControl(method="cv",number=10))
+sink()
+```
+```{r echo=FALSE}
+gbmModelFit
+```
+
+### Prediction & Accuracy Using Gradient Boosting
+The *gbm* model fit from the previous step is used to predict the outcome against the validation dataset. The accuracy results from the confusion matrix analysis is as follows.
+```{r echo=TRUE}
+gbmPredict <- predict(gbmModelFit,newdata=validation2)
+confusionMatrix(gbmPredict,validation2$classe)
+```
+
+# Results & Prediction With Test Data
+Comparing the accuracy results from the three machine learning algorithms it is clear that the *Random Forest* performs best with *99.4%* accuracy with an out-of-sample error between *0.58%* & *0.60%*. The accuracy results and the out-of-sample error for each of the model selection algorithms were computed using the confusion matrix analysis using the validation dataset. The accuracy and the excpected out-of-sample error are as follows.
+
+* Regression Tree Model has accuracy of about *59%* with an out-of-sample error of about *41%*.
+```{r echo=FALSE}
+confusionMatrix(rpartPredict,validation2$classe)$overall['Accuracy']
+```
+* Random Forest Model has an accuracy of *99.4%* with an out-of-sample error of about *0.60%*
+```{r echo=FALSE}
+confusionMatrix(rfPredict,validation2$classe)$overall['Accuracy']
+```
+* Gradient Boosting Model has an accuracy of about *95%*, with an out-of-sample error of about *5%*.
+```{r echo=FALSE}
+confusionMatrix(gbmPredict,validation2$classe)$overall['Accuracy']
+```
+
+Applying the best fitting model *Random Forest* to the test dataset we get the following prediction results.
+```{r echo=TRUE}
+testPredictWithRandomForestModel <- predict(rfModelFit,newdata=testing)
+testPredictWithRandomForestModel
+```
+The code fore generating the project submission results is as follows.
+```{r echo=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+   }
+}
+
+pml_write_files(testPredictWithRandomForestModel)
+```
+
+# References
+1. [Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human ’13) . Stuttgart, Germany: ACM SIGCHI, 2013.](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201)
+2. [HAR Dataset](http://groupware.les.inf.puc-rio.br/har)
+3. [Random Forests](https://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm)
+
