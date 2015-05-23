@@ -39,5 +39,5 @@ The following files were submitted as part of the course project.
 * PracticalMachineLearningProject.pdf
 * Readme.md
 
-I have submitted both the *PDF* and *HTML* versions of the knitr generated documents.
+I have submitted both the *PDF* and *HTML* versions of the knitr generated documents in case there is an issue looking at HTML document please look at PDF version of the document.
 
