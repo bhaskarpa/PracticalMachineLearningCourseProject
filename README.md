@@ -2,7 +2,7 @@
 output: html_document
 ---
 # Practical Machine Learning - Course Project
-## Introduction (gh-pages branch)
+## Introduction
 The goal of this project is to analyze the Weight Lifting Excercise dataset obtained from the HAR(Human Activity Recognition) Website and pick the best model selection algorithm to predict the class of excercises that are best performed by the person wearing the activity mearsuning device. The data was collected for six persons performing a pre-determined set of excersices which were classified into five groups as listed here.
 
 * Class A - done exactly accoring to specification
